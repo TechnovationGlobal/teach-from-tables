@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Builder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f6f2;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #e2e0d8;
+    --border2: #ccc9be;
+    --text: #1a1a18;
+    --text2: #5a5850;
+    --text3: #9a9890;
+    --accent: #2a6e4e;
+    --accent-bg: #e8f4ee;
+    --accent-text: #1a5038;
+    --warn: #92550a;
+    --warn-bg: #fef3e2;
+    --danger: #8b2020;
+    --danger-bg: #fdeaea;
+    --info: #1a4a7a;
+    --info-bg: #e8f0fa;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: 'Georgia', serif;
+    --mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.6; }
+
+  .app { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  .app-header { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+  .app-header h1 { font-size: 26px; font-weight: normal; letter-spacing: -0.5px; color: var(--text); margin-bottom: 4px; }
+  .app-header p { font-size: 14px; color: var(--text2); font-family: sans-serif; }
+
+  .steps { display: flex; gap: 0; margin-bottom: 2rem; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .step-tab { flex: 1; padding: 10px 8px; text-align: center; font-size: 12px; font-family: sans-serif; color: var(--text3); cursor: pointer; background: var(--surface2); border-right: 1px solid var(--border); transition: all 0.15s; user-select: none; }
+  .step-tab:last-child { border-right: none; }
+  .step-tab.active { background: var(--surface); color: var(--text); font-weight: 600; }
+  .step-tab.done { color: var(--accent-text); }
+  .step-tab .step-num { display: block; font-size: 16px; font-weight: normal; margin-bottom: 2px; }
+  .step-tab.done .step-num { color: var(--accent); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .card-title { font-size: 15px; font-weight: bold; color: var(--text); }
+  .card-sub { font-size: 13px; color: var(--text2); font-family: sans-serif; margin-top: 2px; }
+
+  .section-label { font-size: 13px; font-weight: bold; color: var(--text); margin-bottom: 4px; font-family: sans-serif; }
+  .section-hint { font-size: 12px; color: var(--text2); font-family: sans-serif; margin-bottom: 12px; }
+
+  .drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius); padding: 2.5rem 1.5rem; text-align: center; cursor: pointer; transition: background 0.15s; }
+  .drop-zone:hover { background: var(--surface2); }
+  .drop-zone p { font-size: 14px; color: var(--text2); font-family: sans-serif; margin-bottom: 4px; }
+  .drop-zone small { font-size: 12px; color: var(--text3); font-family: sans-serif; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: sans-serif; }
+  th { padding: 8px 12px; text-align: left; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); font-size: 12px; }
+  td { padding: 7px 12px; color: var(--text); border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: var(--surface2); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-family: sans-serif; }
+  .badge-num { background: var(--info-bg); color: var(--info); }
+  .badge-text { background: var(--accent-bg); color: var(--accent-text); }
+  .badge-warn { background: var(--warn-bg); color: var(--warn); }
+  .badge-ok { background: var(--accent-bg); color: var(--accent-text); }
+  .badge-danger { background: var(--danger-bg); color: var(--danger); }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; font-family: sans-serif; cursor: pointer; background: var(--surface); color: var(--text); transition: background 0.12s; }
+  .btn:hover { background: var(--surface2); }
+  .btn-primary { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+  .btn-primary:hover { background: #d4ecdf; }
+  .btn-info { background: var(--info-bg); color: var(--info); border-color: #a0bce0; }
+  .btn-info:hover { background: #d8e8f8; }
+  .btn-sm { padding: 4px 12px; font-size: 12px; }
+  .btn-active { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+
+  .check-section { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; }
+  .check-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--surface2); cursor: pointer; }
+  .check-header:hover { background: #eae9e2; }
+  .check-title { flex: 1; font-size: 14px; font-weight: bold; color: var(--text); font-family: sans-serif; }
+  .check-body { padding: 14px 16px; border-top: 1px solid var(--border); }
+  .check-body p { font-size: 13px; color: var(--text2); font-family: sans-serif; margin-bottom: 10px; }
+
+  .col-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: var(--radius-sm); font-size: 13px; font-family: sans-serif; cursor: pointer; border: 1px solid var(--border2); background: var(--surface); color: var(--text); transition: all 0.12s; margin: 3px; }
+  .col-chip:hover { background: var(--surface2); }
+  .col-chip.selected-target { background: var(--info-bg); color: var(--info); border-color: #7aaad8; }
+  .col-chip.selected-feature { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+  .col-chip.deselected { background: var(--surface2); color: var(--text3); border-color: var(--border); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .stat-card { background: var(--surface2); border-radius: var(--radius-sm); padding: 10px 14px; border: 1px solid var(--border); }
+  .stat-label { font-size: 11px; color: var(--text2); font-family: sans-serif; margin-bottom: 4px; }
+  .stat-val { font-size: 22px; font-weight: bold; color: var(--text); font-family: sans-serif; }
+  .stat-sub { font-size: 11px; color: var(--text3); font-family: sans-serif; margin-top: 2px; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-label { font-size: 13px; color: var(--text); min-width: 110px; font-family: sans-serif; }
+  .bar-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.4s; }
+  .bar-pct { font-size: 12px; color: var(--text2); min-width: 36px; text-align: right; font-family: sans-serif; }
+
+  .predict-result { padding: 12px 16px; background: var(--accent-bg); border: 1px solid var(--accent); border-radius: var(--radius-sm); margin-top: 12px; display: none; }
+  .predict-result .label { font-size: 12px; color: var(--accent-text); font-family: sans-serif; margin-bottom: 4px; }
+  .predict-result .value { font-size: 24px; font-weight: bold; color: var(--accent-text); font-family: sans-serif; }
+
+  .download-row { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .download-row:last-child { border-bottom: none; }
+  .download-icon { font-size: 28px; margin-top: 2px; }
+  .download-info { flex: 1; }
+  .download-name { font-size: 14px; font-weight: bold; color: var(--text); font-family: sans-serif; margin-bottom: 2px; }
+  .download-desc { font-size: 12px; color: var(--text2); font-family: sans-serif; margin-bottom: 8px; }
+
+  .code-block { background: #1e1e1a; color: #d4d0c4; font-family: var(--mono); font-size: 12px; padding: 12px 16px; border-radius: var(--radius-sm); overflow-x: auto; white-space: pre; line-height: 1.5; }
+
+  .pager { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .pager-info { font-size: 12px; color: var(--text3); font-family: sans-serif; flex: 1; }
+
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=number], select, input[type=text] { padding: 6px 10px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; font-family: sans-serif; background: var(--surface); color: var(--text); width: 100%; }
+  input[type=number]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .nav-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+  .nav-bar p { font-size: 13px; color: var(--text2); font-family: sans-serif; }
+
+  .alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; font-family: sans-serif; margin-bottom: 12px; }
+  .alert-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #e8c070; }
+  .alert-ok { background: var(--accent-bg); color: var(--accent-text); border: 1px solid var(--accent); }
+
+  .flex-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .gap-sm { gap: 6px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="app-header">
+    <h1>Teach from Tables</h1>
+    <p>Upload spreadhseet data &rarr; clean it &rarr; train a model &rarr; export for use anywhere</p>
+  </div>
+
+  <div class="steps">
+    <div class="step-tab active" id="tab-1" onclick="goTab(1)"><span class="step-num">1</span>Upload</div>
+    <div class="step-tab" id="tab-2" onclick="goTab(2)"><span class="step-num">2</span>Clean</div>
+    <div class="step-tab" id="tab-3" onclick="goTab(3)"><span class="step-num">3</span>Train</div>
+    <div class="step-tab" id="tab-4" onclick="goTab(4)"><span class="step-num">4</span>Export</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ STEP 1 -->
+  <div class="panel active" id="panel-1">
+    <div class="card">
+      <div class="section-label">Upload a CSV file</div>
+      <div class="section-hint">Your file should have column headers in the first row, with one column being the label you want to predict.</div>
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="event.preventDefault();this.style.background='var(--surface2)'" ondragleave="this.style.background=''" ondrop="handleDrop(event)">
+        <p>Drag and drop a CSV file here, or click to browse</p>
+        <small>Supports .csv files</small>
+        <input id="file-input" type="file" accept=".csv" style="display:none" onchange="handleFile(this.files[0])">
+      </div>
+      <div style="text-align:center;margin-top:10px;">
+        <button class="btn btn-sm" onclick="loadSample()">Load sample dataset</button>
+      </div>
+    </div>
+
+    <div class="card" id="preview-card" style="display:none;">
+      <div class="card-header">
+        <div>
+          <div class="card-title" id="file-name-lbl"></div>
+          <div class="card-sub" id="file-meta-lbl"></div>
+        </div>
+        <button class="btn btn-sm" onclick="resetFile()">&#x21bb; Change file</button>
+      </div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
+        <table id="preview-table"></table>
+      </div>
+      <div class="pager">
+        <span class="pager-info" id="pager-info"></span>
+        <button class="btn btn-sm" onclick="changePage(-1)">&#8592;</button>
+        <span id="page-lbl" style="font-size:12px;font-family:sans-serif;color:var(--text2);"></span>
+        <button class="btn btn-sm" onclick="changePage(1)">&#8594;</button>
+      </div>
+      <hr>
+      <div class="section-label" style="margin-bottom:8px;">Column types detected</div>
+      <div id="col-badges" class="flex-row gap-sm"></div>
+      <div class="nav-bar">
+        <p>Looks good? Continue when ready.</p>
+        <button class="btn btn-primary" onclick="goTab(2)">Continue to cleaning &rarr;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ STEP 2 -->
+  <div class="panel" id="panel-2">
+    <div id="clean-summary" class="stat-grid" style="margin-bottom:1rem;"></div>
+    <div id="checks-container"></div>
+
+    <div class="card" id="clean-preview-card" style="display:none;margin-top:1rem;">
+      <div class="card-title" style="margin-bottom:8px;">Preview after cleaning</div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
+        <table id="clean-table"></table>
+      </div>
+      <p id="clean-meta" style="font-size:12px;color:var(--text3);font-family:sans-serif;margin-top:6px;"></p>
+    </div>
+
+    <div class="nav-bar" id="clean-nav" style="display:none;">
+      <p id="clean-ready-msg"></p>
+      <button class="btn btn-primary" onclick="goTab(3)">Continue to training &rarr;</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ STEP 3 -->
+  <div class="panel" id="panel-3">
+    <div class="card">
+      <div class="section-label">What do you want to predict?</div>
+      <div class="section-hint">This is your <em>target column</em> — the answer your model will learn to give.</div>
+      <div id="target-grid" class="flex-row gap-sm" style="margin-bottom:0.75rem;"></div>
+      <div id="target-warning"></div>
+    </div>
+
+    <div class="card" id="feature-card" style="display:none;">
+      <div class="section-label">Which columns should the model learn from?</div>
+      <div class="section-hint">These are your <em>features</em> — the clues your model uses. Click to toggle columns on or off.</div>
+      <div id="feature-grid" class="flex-row gap-sm" style="margin-bottom:0.75rem;"></div>
+      <div id="feature-warnings" style="margin-bottom:0.75rem;"></div>
+
+      <button class="btn btn-primary" onclick="trainModel()">&#9654; Train model</button>
+    </div>
+
+    <div class="card" id="results-card" style="display:none;">
+      <div class="card-title" style="margin-bottom:1rem;">Results</div>
+      <div class="stat-grid" id="result-stats"></div>
+
+      <div class="section-label" style="margin-bottom:8px;">How did each feature help?</div>
+      <div class="section-hint">Estimated by testing the model with each column shuffled. Higher = more useful.</div>
+      <div id="importance-bars" style="margin-bottom:1.25rem;"></div>
+
+      <hr style="margin-bottom:1.25rem;">
+      <div class="section-label" style="margin-bottom:4px;">Try a prediction</div>
+      <div class="section-hint">Enter values and see what your model predicts.</div>
+      <div id="predict-inputs" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px;"></div>
+      <button class="btn btn-info" onclick="runPredict()">&#10024; Predict</button>
+      <div class="predict-result" id="predict-result">
+        <div class="label">Prediction</div>
+        <div class="value" id="predict-val"></div>
+      </div>
+
+      <div class="nav-bar">
+        <p>Happy with your model?</p>
+        <button class="btn btn-primary" onclick="goTab(4)">Continue to export &rarr;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ STEP 4 -->
+  <div class="panel" id="panel-4">
+    <div class="card" id="export-summary"></div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:1rem;">Downloads</div>
+
+      <div class="download-row">
+        <div class="download-icon">&#128230;</div>
+        <div class="download-info">
+          <div class="download-name">Starter package</div>
+          <div class="download-desc">A ready-to-use web page pre-loaded with your model. Open starter.html in a browser, enter values, and get predictions — no setup needed.</div>
+          <button class="btn btn-sm btn-primary" onclick="downloadStarterZip()">&#11015; Download starter.zip</button>
+        </div>
+      </div>
+      <div class="download-row">
+        <div class="download-icon">&#128196;</div>
+        <div class="download-info">
+          <div class="download-name">model.json only</div>
+          <div class="download-desc">Just the model file, if you already have your own page.</div>
+          <button class="btn btn-sm" onclick="downloadModel()">&#11015; Download model.json</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="model-build-ui.js" defer></script>
+</body>
+</html>
