@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Penguin Predictor</title>
+</head>
+<body>
+
+  <h2>Penguin Predictor</h2>
+  
+  <div id="status">Model loading.</div>
+  <div id="input-form" style="display:none; margin-top:1rem;"></div>
+
+  <button id="predict-btn" onclick="predict()" style="display:none; margin-top:1rem;">Predict</button>
+
+  <div id="result" style="margin-top:1rem; font-size:1.2rem;"></div>
+
+  <script>
+    // ─── Configuration ───────────────────────────────────────────
+    // Change this path to wherever your model.json file lives.
+    // If it's in the same folder as this HTML file, leave it as "model.json"
+    const MODEL_URL = "model.json";
+
+    // ─── State ───────────────────────────────────────────────────
+    let model = null;
+
+    // ─── Load the model ──────────────────────────────────────────
+    async function loadModel() {
+      document.getElementById("status").textContent = "Loading model...";
+      try {
+        const response = await fetch(MODEL_URL);
+        model = await response.json();
+        document.getElementById("status").textContent =
+          "Model loaded! Predicting: " + model.targetCol;
+        buildForm();
+      } catch (e) {
+        document.getElementById("status").textContent =
+          "Could not load model.json. Make sure it is in the same folder.";
+      }
+    }
+
+    // ─── Build input fields from model features ──────────────────
+    function buildForm() {
+      const form = document.getElementById("input-form");
+      form.innerHTML = "";
+
+      model.featureCols.forEach(feature => {
+        const type = model.colTypes[feature];
+        const label = document.createElement("label");
+        label.textContent = feature + ": ";
+        label.style.display = "block";
+        label.style.marginBottom = "8px";
+
+        let input;
+        if (type === "number") {
+          input = document.createElement("input");
+          input.type = "number";
+          input.id = "feat-" + feature;
+          input.placeholder = feature;
+        } else {
+          // Text column — build a dropdown from known values
+          input = document.createElement("select");
+          input.id = "feat-" + feature;
+          const options = model.encodings[feature] || [];
+          options.forEach(opt => {
+            const o = document.createElement("option");
+            o.value = opt;
+            o.textContent = opt;
+            input.appendChild(o);
+          });
+        }
+
+        label.appendChild(input);
+        form.appendChild(label);
+      });
+
+      form.style.display = "block";
+      document.getElementById("predict-btn").style.display = "inline-block";
+    }
+
+    // ─── Run a prediction ────────────────────────────────────────
+    function predict() {
+      if (!model) {
+        alert("Please load the model first.");
+        return;
+      }
+
+      // Collect input values from the form
+      const inputs = {};
+      model.featureCols.forEach(feature => {
+        inputs[feature] = document.getElementById("feat-" + feature).value;
+      });
+
+      // Encode the inputs into a numeric vector
+      const inputVec = encodeRow(inputs);
+
+      // Find the k nearest neighbours and vote
+      const result = knnPredict(inputVec);
+
+      document.getElementById("result").textContent = "Prediction: " + result;
+    }
+
+    // ─── Encode a row into a numeric vector ──────────────────────
+    function encodeRow(inputs) {
+      const vec = [];
+      model.featureCols.forEach(feature => {
+        const type = model.colTypes[feature];
+        if (type === "number") {
+          const v = parseFloat(inputs[feature]) || 0;
+          const s = model.stats[feature];
+          vec.push(s ? (v - s.mn) / s.range : v);
+        } else {
+          const options = model.encodings[feature] || [];
+          options.forEach(opt => vec.push(inputs[feature] === opt ? 1 : 0));
+        }
+      });
+      return vec;
+    }
+
+    // ─── Euclidean distance between two vectors ──────────────────
+    function euclidean(a, b) {
+      return Math.sqrt(a.reduce((sum, val, i) => sum + (val - b[i]) ** 2, 0));
+    }
+
+    // ─── Encode a training row the same way ──────────────────────
+    function encodeTrainRow(row) {
+      return encodeRow(row);
+    }
+
+    // ─── KNN prediction ──────────────────────────────────────────
+    function knnPredict(inputVec) {
+      const k = model.k;
+      const target = model.targetCol;
+
+      // Calculate distance from input to every training row
+      const distances = model.trainingData.map(row => ({
+        distance: euclidean(encodeTrainRow(row), inputVec),
+        label: row[target]
+      }));
+
+      // Sort by distance, take the k closest
+      distances.sort((a, b) => a.distance - b.distance);
+      const neighbours = distances.slice(0, k);
+
+      // Vote — whichever label appears most wins
+      const votes = {};
+      neighbours.forEach(n => {
+        votes[n.label] = (votes[n.label] || 0) + 1;
+      });
+      return Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
+    }
+    loadModel(); 
+     </script>
+
+</body>
+</html>

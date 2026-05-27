@@ -496,7 +496,6 @@ function downloadModel(){
   download(JSON.stringify(buildModelPayload(),null,2),'model.json','application/json');
 }
 function generateStarterHtml(payload){
-  const safeJson=JSON.stringify(payload).replace(/<\/script>/gi,'<\\/script>');
   const fields=payload.featureCols.map(f=>{
     const id='inp_'+f.replace(/\W+/g,'_');
     if(payload.colTypes[f]==='number'){
@@ -539,7 +538,8 @@ function generateStarterHtml(payload){
     <div class="val" id="pred-val"></div>
   </div>
   <script>
-  const MODEL = ${safeJson};
+  let MODEL = null;
+  fetch('model.json').then(r => r.json()).then(m => { MODEL = m; });
 
   function encodeRow(inputs) {
     const vec = [];
@@ -555,6 +555,7 @@ function generateStarterHtml(payload){
   }
 
   function predict() {
+    if (!MODEL) { alert('Model still loading — try again in a moment.'); return; }
     const inputs = {};
     MODEL.featureCols.forEach(f => {
       inputs[f] = document.getElementById('inp_' + f.replace(/\\W+/g, '_')).value;
@@ -580,13 +581,185 @@ function generateStarterHtml(payload){
 function downloadStarterZip(){
   if(!trainedModel)return;
   const payload=buildModelPayload();
+  const {featureCols,targetCol,k,accuracy}=payload;
+  const readme=`HOW TO RUN YOUR HTML PREDICTOR
+================================
+
+FILES INCLUDED
+--------------
+  starter.html   your predictor page
+  model.json     your trained model
+
+IMPORTANT: starter.html loads model.json via fetch(), so both files
+must be served from a web server — double-clicking starter.html in
+a file manager will NOT work.
+
+OPTION 1 — Python local server (easiest, no install needed)
+  1. Open Terminal / Command Prompt
+  2. Navigate to this folder:
+       cd path/to/this/folder
+  3. Run:
+       python -m http.server 8000
+  4. Open in your browser:
+       http://localhost:8000/starter.html
+
+OPTION 2 — VS Code Live Server extension
+  Install the "Live Server" extension, right-click starter.html,
+  choose "Open with Live Server".
+
+OPTION 3 — Deploy online
+  Upload both files to any static host (GitHub Pages, Netlify,
+  Replit, etc.) and open the public URL.
+
+MODEL DETAILS
+-------------
+  Target  : ${targetCol}
+  Features: ${featureCols.join(', ')}
+  Method  : k-nearest neighbors (k=${k})
+  Accuracy: ${accuracy}%
+`;
   const zip=new JSZip();
   zip.file('model.json',JSON.stringify(payload,null,2));
   zip.file('starter.html',generateStarterHtml(payload));
+  zip.file('README.txt',readme);
   zip.generateAsync({type:'blob'}).then(blob=>{
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download='my-predictor.zip';
+    a.download='javascript_starter.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+function generateStreamlitApp(payload){
+  const fields=payload.featureCols.map(f=>{
+    if(payload.colTypes[f]==='number'){
+      const vals=payload.trainingData.map(r=>parseFloat(r[f])).filter(v=>!isNaN(v));
+      const mn=Math.min(...vals),mx=Math.max(...vals),avg=(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2);
+      return `    inputs['${f}'] = st.number_input('${f}', min_value=float(${mn}), max_value=float(${mx}), value=float(${avg}), step=0.01)`;
+    } else {
+      const opts=(payload.encodings[f]||[]).map(v=>`'${v}'`).join(', ');
+      return `    inputs['${f}'] = st.selectbox('${f}', [${opts}])`;
+    }
+  }).join('\n');
+  return `# app.py — Streamlit predictor built with Model Builder
+# Run:  streamlit run app.py
+# Needs: pip install streamlit
+
+import json, math
+import streamlit as st
+
+with open('model.json') as f:
+    MODEL = json.load(f)
+
+# ── encoding & prediction helpers ────────────────────────
+def encode_row(inputs):
+    vec = []
+    for feat in MODEL['featureCols']:
+        if MODEL['colTypes'][feat] == 'number':
+            v = float(inputs.get(feat, 0))
+            s = MODEL['stats'].get(feat, {})
+            vec.append((v - s['mn']) / s['range'] if s.get('range') else v)
+        else:
+            for val in MODEL['encodings'].get(feat, []):
+                vec.append(1 if inputs.get(feat) == val else 0)
+    return vec
+
+def euclidean(a, b):
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+
+def knn_predict(input_vec):
+    k, train, target = MODEL['k'], MODEL['trainingData'], MODEL['targetCol']
+    feats, ct = MODEL['featureCols'], MODEL['colTypes']
+    enc, stats = MODEL.get('encodings', {}), MODEL.get('stats', {})
+
+    def encode_train(row):
+        v = []
+        for f in feats:
+            if ct[f] == 'number':
+                val = float(row.get(f, 0))
+                s = stats.get(f, {})
+                v.append((val - s['mn']) / s['range'] if s.get('range') else val)
+            else:
+                for opt in enc.get(f, []):
+                    v.append(1 if row.get(f) == opt else 0)
+        return v
+
+    dists = sorted(
+        [(euclidean(encode_train(row), input_vec), row[target]) for row in train],
+        key=lambda x: x[0]
+    )
+    counts = {}
+    for _, label in dists[:k]:
+        counts[label] = counts.get(label, 0) + 1
+    return max(counts, key=counts.get)
+
+# ── UI ───────────────────────────────────────────────────
+st.set_page_config(page_title='My Predictor', page_icon='🔮')
+st.title('🔮 My Predictor')
+st.caption(f"KNN model · k={MODEL['k']} · Training accuracy: {MODEL['accuracy']}%")
+st.divider()
+
+inputs = {}
+with st.form('predict_form'):
+${fields}
+    submitted = st.form_submit_button('Predict', type='primary', use_container_width=True)
+
+if submitted:
+    x = encode_row(inputs)
+    prediction = knn_predict(x)
+    st.success(f"### Prediction: {prediction}", icon='✅')
+`;
+}
+function downloadStreamlitZip(){
+  if(!trainedModel)return;
+  const payload=buildModelPayload();
+  const appPy=generateStreamlitApp(payload);
+  const requirements='streamlit\n';
+  const readme=`HOW TO RUN YOUR STREAMLIT PREDICTOR
+=====================================
+
+FILES INCLUDED
+--------------
+  app.py            your predictor app
+  model.json        your trained model
+  requirements.txt  Python packages needed
+
+STEP 1 — Install Python
+  Download from https://python.org
+  (Check "Add Python to PATH" on Windows)
+
+STEP 2 — Install Streamlit
+  Open Terminal / Command Prompt and run:
+    pip install streamlit
+
+STEP 3 — Run the app
+  Navigate to this folder, then:
+    streamlit run app.py
+  A browser tab will open automatically.
+
+DEPLOY ONLINE (optional)
+  Streamlit Community Cloud — free, easiest:
+    1. Push this folder to a GitHub repo
+    2. Go to share.streamlit.io
+    3. Connect your repo and click Deploy
+
+MODEL DETAILS
+-------------
+  Target  : ${payload.targetCol}
+  Features: ${payload.featureCols.join(', ')}
+  Method  : k-nearest neighbors (k=${payload.k})
+  Accuracy: ${payload.accuracy}%
+`;
+  const zip=new JSZip();
+  zip.file('model.json',JSON.stringify(payload,null,2));
+  zip.file('app.py',appPy);
+  zip.file('requirements.txt',requirements);
+  zip.file('README.txt',readme);
+  zip.generateAsync({type:'blob'}).then(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='streamlit_starter.zip';
     a.click();
     URL.revokeObjectURL(a.href);
   });
